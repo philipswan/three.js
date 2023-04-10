@@ -78,6 +78,8 @@ class OrbitControls extends EventDispatcher {
 		this.autoRotate = false;
 		this.autoRotateSpeed = 2.0; // 30 seconds per orbit when fps is 60
 
+		this.upDirection = object.up.clone();
+
 		// The four arrow keys
 		this.keys = { LEFT: 'ArrowLeft', UP: 'ArrowUp', RIGHT: 'ArrowRight', BOTTOM: 'ArrowDown' };
 
@@ -159,16 +161,16 @@ class OrbitControls extends EventDispatcher {
 
 			const offset = new Vector3();
 
-			// so camera.up is the orbit axis
-			const quat = new Quaternion().setFromUnitVectors( object.up, new Vector3( 0, 1, 0 ) );
-			const quatInverse = quat.clone().invert();
-
 			const lastPosition = new Vector3();
 			const lastQuaternion = new Quaternion();
 
 			const twoPI = 2 * Math.PI;
 
 			return function update() {
+
+				// so camera.up is the orbit axis
+				const quat = new Quaternion().setFromUnitVectors( scope.upDirection, new Vector3( 0, 1, 0 ) );
+				const quatInverse = quat.clone().invert();
 
 				const position = scope.object.position;
 

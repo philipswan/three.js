@@ -5,6 +5,7 @@ export * from './ConeGeometry.js';
 export * from './CylinderGeometry.js';
 export * from './DodecahedronGeometry.js';
 export * from './EdgesGeometry.js';
+export * from './FacesGeometry.js';
 export * from './ExtrudeGeometry.js';
 export * from './IcosahedronGeometry.js';
 export * from './LatheGeometry.js';
