@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 	<head>
-		<title>three.js webgl - geometry - supercurve editor</title>
+		<title>three.js webgl - geometry - launch trajectory editor</title>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<link type="text/css" rel="stylesheet" href="main.css">
@@ -44,14 +44,14 @@
 			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 			import { TransformControls } from 'three/addons/controls/TransformControls.js';
 			import TWEEN from 'three/addons/libs/tween.module.js';
-			import { mergeGeometries } from './jsm/utils/BufferGeometryUtils.js'
+			import { launchVehicleModel } from './jsm/objects/rocket.js'
 
 			let container;
 			let camera, scene, renderer;
 			let orbitControls;
 			let logZoomRate = -2
 
-			const splineHelperObjects = [];
+			const splineHandleObjects = [];
 			let splinePointsLength = 4;
 			let ringToPlanetRotation = new THREE.Quaternion()
 
@@ -70,8 +70,12 @@
 			const pointer = new THREE.Vector2();
 			const onUpPosition = new THREE.Vector2();
 			const onDownPosition = new THREE.Vector2();
+			const mouse = {
+				x: undefined,
+				y: undefined
+			}
 
-			const geometry = new THREE.BoxGeometry( 20, 20, 20 );
+			const splineHandleGeometry = new THREE.BoxGeometry( 2000, 2000, 2000 );
 			let transformControl;
 
 			const ARC_SEGMENTS = 200;
@@ -84,6 +88,10 @@
 				logZoomRate: -2,
 				elevationFactor: 1,
 				logRocketScale: 4,
+				massDriverAcceleration: 50,
+				rampUpwardAcceleration: 50,
+				massDriverAltitude: 0,
+				launcherRampExitAltitude: 4169.4,
 				sunlightIntensity: 2,
 				ambientLightIntensity: 0.5,
 				centripetal: true,
@@ -92,67 +100,6 @@
 				removePoint: removePoint,
 				exportSpline: exportSpline
 			};
-
-			class launchVehicleModel {
-				constructor(radius, bodyLength, noseConeLength, flameLength, finLength, finThickness, finHeight) {
-					const lengthSegments = 2
-					const radialSegments = 32
-
-					// Create the vehicle's body
-					const launchVehicleBodyGeometry = new THREE.CylinderGeometry(radius, radius, bodyLength, radialSegments, lengthSegments, false)
-					launchVehicleBodyGeometry.name = "body"
-					launchVehicleBodyGeometry.translate(0, bodyLength/2, 0)
-					// Create the nose cone
-					const launchVehicleNoseConeGeometry = new THREE.ConeGeometry(radius, noseConeLength, radialSegments, lengthSegments, true)
-					launchVehicleNoseConeGeometry.name = "noseCone"
-					launchVehicleNoseConeGeometry.translate(0, (bodyLength+noseConeLength)/2 + bodyLength/2, 0)
-					// Create the fins
-					const finVertices = [
-						new THREE.Vector3(0, finLength, radius),   // Leading edge of fin
-						new THREE.Vector3(finThickness/2, 0.1, radius),  // Left trailing edge of fin
-						new THREE.Vector3(-finThickness/2, 0.1, radius),  // Right trailing edge of fin
-						new THREE.Vector3(0, 0, radius+finHeight)  // Back trailing edge of fin
-					]
-					const finIndices = [
-						0, 1, 2,
-						0, 2, 3,
-						0, 3, 1,
-						3, 2, 1
-					]
-					const launchVehicleFin0Geometry = new THREE.FacesGeometry(finVertices, finIndices)
-
-					launchVehicleFin0Geometry.name = "fin0"
-					const launchVehicleFin1Geometry = launchVehicleFin0Geometry.clone()
-					launchVehicleFin1Geometry.name = "fin1"
-					launchVehicleFin1Geometry.rotateY(Math.PI*2/3)
-					const launchVehicleFin2Geometry = launchVehicleFin0Geometry.clone()
-					launchVehicleFin2Geometry.name = "fin2"
-					launchVehicleFin2Geometry.rotateY(-Math.PI*2/3)
-
-					// Create the vehicle's flame
-					const launchVehicleFlameGeometry = new THREE.CylinderGeometry(radius*.9, radius*0.4, flameLength, radialSegments, lengthSegments, false)
-					launchVehicleFlameGeometry.name = "rocketEngine"
-					launchVehicleFlameGeometry.translate(0, -(bodyLength+flameLength)/2 + bodyLength/2, 0)
-
-					// Merge the nosecone and fins into the body
-					const launchVehicleGeometry = mergeGeometries([launchVehicleBodyGeometry, launchVehicleNoseConeGeometry, launchVehicleFin0Geometry, launchVehicleFin1Geometry, launchVehicleFin2Geometry])
-					const launchVehicleMaterial = new THREE.MeshPhongMaterial( {color: 0x7f3f00})
-					const launchVehicleFlameMaterial = new THREE.MeshPhongMaterial( {color: 0x000000, emissive: 0xdfa0df, emissiveIntensity: 1.25, transparent: true, opacity: 0.5})
-					const launchVehicleBodyMesh = new THREE.Mesh(launchVehicleGeometry, launchVehicleMaterial)
-					launchVehicleBodyMesh.name = 'body'
-					const launchVehicleFlameMesh = new THREE.Mesh(launchVehicleFlameGeometry, launchVehicleFlameMaterial)
-					launchVehicleFlameMesh.name = 'flame'
-					const launchVehiclePointLightMesh = new THREE.Points(
-						new THREE.BufferGeometry().setAttribute( 'position', new THREE.Float32BufferAttribute( [0, 0, 0], 3) ),
-						new THREE.PointsMaterial( { color: 0xFFFFFF } ) )
-					launchVehiclePointLightMesh.name = 'pointLight'
-					const launchVehicleMesh = new THREE.Group().add(launchVehicleBodyMesh).add(launchVehicleFlameMesh)
-					launchVehicleMesh.name = 'launchVehicle'
-					launchVehiclePointLightMesh.visible = true
-					launchVehicleMesh.add(launchVehiclePointLightMesh)
-					return launchVehicleMesh
-				}
-			}
 
 			const GRAPH_WIDTH = 600;
 			const GRAPH_HEIGHT = 300;
@@ -176,13 +123,7 @@
 					this.prevStartWedgeIndex = -1
 					this.prevFinishWedgeIndex = -1
 					const makePlaceHolderEntry = () => ({
-						'virtualMassDriverTubes': [],
-						'virtualMassDriverRails': [],
-						'virtualMassDriverBrackets': [],
-						'virtualMassDriverScrews': [],
-						'virtualEvacuatedTubes': [],
 						'virtualLaunchVehicles': [],
-						'virtualLaunchSleds': []
 					})
 					this.wedges = new Array(numWedges).fill().map( makePlaceHolderEntry )
 				}
@@ -191,14 +132,14 @@
 			class virtualLaunchVehicle {
 				constructor(timeLaunched, unallocatedModelsArray) {
 					// The virtual vehicle has a position along the launch trajectory curve.
-					// 0 represents the beginning of the mass driver, 1 represents 't==launchTrajectoryCurveDuration'
+					// 0 represents the beginning of the mass driver, 1 represents 't==durationOfLaunchTrajectory'
 					this.timeLaunched = timeLaunched
 					this.unallocatedModels = unallocatedModelsArray
 				}
 
 				// The following properties are common to all virtual vehicles...
 				static launchTrajectoryCurve
-				static launchTrajectoryCurveDuration
+				static durationOfLaunchTrajectory
 				//static launchVehicleRelativePosition_r = []
 				//static launchVehicleRelativePosition_y = []
 				static currentEquivalentLatitude
@@ -206,9 +147,9 @@
 				static isDynamic
 				static hasChanged
 
-				static update(dParamWithUnits, launchTrajectoryCurve, launchTrajectoryCurveDuration, timeWithinMassDriver, curveUpTime, timeWithinEvacuatedTube) {
+				static update(dParamWithUnits, launchTrajectoryCurve, durationOfLaunchTrajectory, timeWithinMassDriver, curveUpTime, timeWithinEvacuatedTube) {
 					virtualLaunchVehicle.launchTrajectoryCurve = launchTrajectoryCurve
-					virtualLaunchVehicle.launchTrajectoryCurveDuration = launchTrajectoryCurveDuration
+					virtualLaunchVehicle.durationOfLaunchTrajectory = durationOfLaunchTrajectory
 					virtualLaunchVehicle.timeInsideLaunchSystem = timeWithinMassDriver + curveUpTime + timeWithinEvacuatedTube
 					//const outwardOffset = dParamWithUnits['launcherOutwardOffset'].value
 					//const upwardOffset = dParamWithUnits['launcherUpwardOffset'].value
@@ -225,7 +166,7 @@
 
 				placeAndOrientModel(om, refFrame) {
 					const deltaT = refFrame.timeSinceStart * virtualLaunchVehicle.slowDownPassageOfTime - this.timeLaunched
-					const modelsCurvePosition = deltaT / virtualLaunchVehicle.launchTrajectoryCurveDuration
+					const modelsCurvePosition = deltaT / virtualLaunchVehicle.durationOfLaunchTrajectory
 					
 					if (modelsCurvePosition==='undefined' || (modelsCurvePosition<0)) {
 						console.log("error!!!")
@@ -263,10 +204,10 @@
 						om.visible = false
 					}
 				}
-				}
+			}
 
 			class launcher {
-				constructor(dParamWithUnits, planetCoordSys, radiusOfPlanet, evacuatedTubeEntrancePosition, evacuatedTubeExitPosition, xyChart, clock) {
+				constructor(dParamWithUnits, planetCoordSys, radiusOfPlanet, xyChart, clock) {
 					this.const_G = 0.0000000000667408;
 					this.clock = clock
 					this.versionNumber = 0
@@ -337,7 +278,7 @@
 					this.actionFlags = new Array(this.numWedges).fill(0)
 					this.perfOptimizedThreeJS = dParamWithUnits['perfOptimizedThreeJS'].value ? 1 : 0
 
-					this.updateTrajectoryCurves(dParamWithUnits, planetCoordSys, radiusOfPlanet, evacuatedTubeEntrancePosition, evacuatedTubeExitPosition)
+					this.updateTrajectoryCurves(dParamWithUnits, planetCoordSys, radiusOfPlanet)
 					// Next, create all of the virtual objects that will be placed along the launch trajectory curve
 					
 					// Add the virtual launch sleds and launch vehicles
@@ -347,8 +288,7 @@
 					wedgeIndex = 0
 					const refFrame = this.refFrames[0]
 					// Hack - remove "&& (n<150)"
-					for (t = -.02, n = 0; (t<this.launchTrajectoryCurveDuration) && (n<150); t += tInc, n++) {
-						//refFrame.wedges[wedgeIndex]['virtualLaunchSleds'].push(new virtualLaunchSled(-t, this.unallocatedLaunchSledModels))
+					for (t = -.02, n = 0; (t<this.durationOfLaunchTrajectory) && (n<150); t += tInc, n++) {
 						refFrame.wedges[wedgeIndex]['virtualLaunchVehicles'].push(new virtualLaunchVehicle(-t, this.unallocatedLaunchVehicleModels))
 					}
 
@@ -377,6 +317,7 @@
 
 					// Create and add the launch vechicle models
 					const launchVehicleMesh = new launchVehicleModel(dParamWithUnits)
+
 					// n = dParamWithUnits['launchVehicleNumModels'].value
 					addLaunchVehicles(launchVehicleMesh, this.scene, this.unallocatedLaunchVehicleModels, 'launchVehicle', 1, n, this.perfOptimizedThreeJS)
 
@@ -398,65 +339,6 @@
 						}
 					}
 
-					// Add the virtual mass drivers and a model for each virtual mass driver
-
-					// ToDo: Since there's a one-to-one mapping between real and virtual components here, consider whether virtual components are really needed.
-					
-					// Hack
-					//this.massDriverScrewTexture = new THREE.TextureLoader().load( './textures/steelTexture.jpg' )
-
-					wedgeIndex = 0
-					// n = dParamWithUnits['launcherMassDriverTubeNumModels'].value
-					// for (let i = 0; i < n; i++) {
-					// 	const d = (i+0.5)/n
-					// 	const vmdt = new virtualMassDriverTube(d)
-					// 	refFrame.wedges[wedgeIndex]['virtualMassDriverTubes'].push(vmdt)
-					// 	vmdt.model = new massDriverTubeModel(dParamWithUnits, this.massDriverSuperCurve, i)
-					// 	vmdt.model.name = 'massDriverTube'
-					// 	this.scene.add(vmdt.model)
-					// 	const vmdr = new virtualMassDriverRail(d)
-					// 	refFrame.wedges[wedgeIndex]['virtualMassDriverRails'].push(vmdr)
-					// 	vmdr.model = new massDriverRailModel(dParamWithUnits, this.massDriverSuperCurve, i)
-					// 	vmdr.model.name = 'massDriverRail'
-					// 	this.scene.add(vmdr.model)
-					// }
-
-					// n = this.massDriverScrewSegments
-					// const halfBracketThickness = dParamWithUnits['launcherMassDriverScrewBracketThickness'].value / 2 / this.launcherMassDriverLength
-					// // Hack: Until we figure out a more efficient way to generate screw models for large numbers of screws
-					// this.nLimit = 600
-
-					// for (let i = 0; i < Math.min(this.nLimit, n); i++) {
-					// 	const d = (i+0.5)/n - halfBracketThickness
-					// 	const leftmodel = new massDriverScrewModel(dParamWithUnits, this.launcherMassDriverLength, this.massDriverScrewSegments, i, this.massDriverScrewTexture)
-					// 	leftmodel.name = 'massDriverScrew'
-					// 	for (let lr = -1; lr < 2; lr+=2) {
-					// 		const vmds = new virtualMassDriverScrew(d, lr)
-					// 		refFrame.wedges[wedgeIndex]['virtualMassDriverScrews'].push(vmds)
-					// 		vmds.model = leftmodel.clone()
-					// 		vmds.model.scale.set(lr, 1, 1)
-					// 		this.scene.add(vmds.model)
-					// 	}
-					// 	const vmdb = new virtualMassDriverBracket(d)
-					// 	refFrame.wedges[wedgeIndex]['virtualMassDriverBrackets'].push(vmdb)
-					// 	vmdb.model = new massDriverBracketModel(dParamWithUnits, this.massDriverSuperCurve, this.launcherMassDriverLength, this.massDriverScrewSegments, i)
-					// 	vmdb.model.name = 'massDriverBracket'
-					// 	this.scene.add(vmdb.model)
-					// }
-
-					// Add the virtual evacuated tube and a model for each virtual evacuated tube
-					wedgeIndex = 0
-					// n = dParamWithUnits['launcherEvacuatedTubeNumModels'].value
-					// for (let i = 0; i < n; i++) {
-					// 	const orientation = new THREE.Quaternion
-					// 	orientation.setFromUnitVectors(new THREE.Vector3(0, 1, 0), this.evacuatedTubeCurve.getTangentAt((i+0.5)/n))
-					// 	const vet = new virtualEvacuatedTube((i+0.5)/n, orientation)        
-					// 	refFrame.wedges[wedgeIndex]['virtualEvacuatedTubes'].push(vet)
-					// 	vet.model = new evacuatedTubeModel(dParamWithUnits, this.evacuatedTubeCurve, i)
-					// 	vet.model.name = 'evacuatedTube'
-					// 	this.scene.add(vet.model)
-					// }
-
 					this.update(dParamWithUnits)
 				}
 
@@ -468,44 +350,24 @@
 					//virtualMassDriverScrew.update(dParamWithUnits, this.massDriverSuperCurve, this.versionNumber)
 					//virtualEvacuatedTube.update(dParamWithUnits, this.evacuatedTubeCurve)
 					//virtualLaunchSled.update(dParamWithUnits, this.massDriverSuperCurve, this.launcherMassDriverLength, this.scene)
-					virtualLaunchVehicle.update(dParamWithUnits, this.launchTrajectoryCurve, this.launchTrajectoryCurveDuration, this.timeWithinMassDriver, this.curveUpTime, this.timeWithinEvacuatedTube)
+					virtualLaunchVehicle.update(dParamWithUnits, this.launchTrajectoryCurve, this.durationOfLaunchTrajectory, this.timeWithinMassDriver, this.curveUpTime, this.timeWithinEvacuatedTube)
 					this.animateLaunchVehicles = dParamWithUnits['animateLaunchVehicles'].value ? 1 : 0
 					//this.animateLaunchSleds = dParamWithUnits['animateLaunchSleds'].value ? 1 : 0
 
 					const wedgeIndex = 0
-					const n = this.massDriverScrewSegments
 					const refFrame = this.refFrames[0]
-					const screwsArray = refFrame.wedges[wedgeIndex]['virtualMassDriverScrews']
 
 					this.LaunchTrajectoryMarker1.visible = dParamWithUnits['showLaunchTrajectory'].value
 					this.LaunchTrajectoryMarker2.visible = dParamWithUnits['showLaunchTrajectory'].value
 					this.LaunchTrajectoryMarker3.visible = dParamWithUnits['showLaunchTrajectory'].value
 					this.LaunchTrajectoryMarker4.visible = dParamWithUnits['showLaunchTrajectory'].value
 					this.xyChart.chartGroup.visible = dParamWithUnits['showXYChart'].value
-
-					// Very Hacky...
-					// if (screwsArray.length == 2 * this.nLimit) {
-					//   // Hack: Until we figure out a more efficient way to generate screw models for large numbers of screws
-					//   for (let i = 0; i < Math.min(this.nLimit, n); i++) {
-					//     for (let lr = -1; lr < 2; lr+=2) {
-					//       //const vmds = new virtualMassDriverScrew((i+0.5)/n, orientation, lr)
-					//       const index = i*2+(1+lr)/2
-					//       const oldModel = refFrame.wedges[wedgeIndex]['virtualMassDriverScrews'][index].model
-					//       this.scene.remove(oldModel)
-					//       const newModel = new massDriverScrewModel(dParamWithUnits, this.launcherMassDriverLength, this.massDriverScrewSegments, i, this.massDriverScrewTexture)
-					//       refFrame.wedges[wedgeIndex]['virtualMassDriverScrews'][index].model = newModel
-					//       this.scene.add(newModel)
-					//     }
-					//   }
-					// }
 				}
 				
 				updateTrajectoryCurves(
 					dParamWithUnits,
 					planetCoordSys,
-					radiusOfPlanet,
-					evacuatedTubeEntrancePosition,
-					evacuatedTubeExitPosition) {
+					radiusOfPlanet) {
 					// The goal is to position the suspended portion of the evacuated launch tube under the tethered ring's tethers. The portion of the launch tube that contains the mass driver will be on the planet's surface.
 					// Let's start by defining the sothern most point on the ring as the end of the mass driver. Then we can create a curve that initially follows the surface of the Earth and then, from the end of the mass driver,
 					// follows a hyperbolic trajectory away from the earth.
@@ -551,14 +413,22 @@
 
 					const launcherMassDriverLength = launcherMassDriverInitialVelocity * launcherMassDriverAccelerationTime + 0.5 * forwardAcceleration * launcherMassDriverAccelerationTime**2
 					this.launcherMassDriverLength = launcherMassDriverLength
-					this.launcherMassDriverScrewModelRoughLength = dParamWithUnits['launcherMassDriverScrewModelRoughLength'].value  // This is the length we want to specify for dynamic model allocation purposes, not a real dimension used to specify the hardware.
-					this.massDriverScrewSegments = Math.ceil(launcherMassDriverLength / this.launcherMassDriverScrewModelRoughLength)
 
 					// ***************************************************************
-					// Design the ramp. The ramp is positioned at the end of the mass driver to divert the vehicle's trajectory skwards.
+					// Design the ramp. The ramp is positioned at the end of the mass driver to divert the vehicle's trajectory skyward.
 					// ***************************************************************
 					// Clamp the altitude of the ramp to be between the altitude of the launcher and the altitude of the main ring.
 					const launcherRampExitAltitude = Math.max(launcherMassDriverAltitude+1, Math.min(dParamWithUnits['launcherRampExitAltitude'].value, launcherEvacuatedTubeExitAltitude))
+					const launcherRampEndLatitudeDegreesN = dParamWithUnits['launcherRampEndLatitudeDegreesN'].value
+					const launcherRampEndLonitudeDegreesE = dParamWithUnits['launcherRampEndLonitudeDegreesE'].value
+
+					const evacuatedTubeEntrancePosition = new THREE.Vector3().setFromSphericalCoords(
+						radiusOfPlanet + launcherRampExitAltitude,
+						Math.PI/2 - launcherRampEndLatitudeDegreesN*Math.PI/180, // ° N
+						launcherRampEndLonitudeDegreesE*Math.PI/180, // ° W,
+					);
+					const evacuatedTubeExitPosition = evacuatedTubeEntrancePosition.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), 0.01).multiplyScalar((radiusOfPlanet + 2*launcherRampExitAltitude) / (radiusOfPlanet + launcherRampExitAltitude))
+
 					const launcherMassDriverUpwardAcceleration = dParamWithUnits['launcherMassDriverUpwardAcceleration'].value
 					const accelerationOfGravity = 9.8 // m/s2 // ToDo: Should make this a function of the selected planet
 					const allowableUpwardTurningRadius = launcherMassDriverExitVelocity**2 / (launcherMassDriverUpwardAcceleration - accelerationOfGravity)
@@ -582,7 +452,7 @@
 					// console.log('upwardAngleAtEndOfRamp', upwardAngleAtEndOfRamp, upwardAngleAtEndOfRamp*180/Math.PI)
 
 					this.launcherRampLength = angleACB * allowableUpwardTurningRadius
-					this.curveUpTime = this.launcherRampLength / launcherMassDriverExitVelocity // ToDo: This is inaccurate as it does not take into account the loss of speed due to coasting up teh ramp.
+					this.curveUpTime = this.launcherRampLength / launcherMassDriverExitVelocity // ToDo: This is inaccurate as it does not take into account the loss of speed due to coasting up the ramp.
 
 					// Let's define the end of the ramp as the launcher's exit position, since from that point on the vehicles will either be coasting or accelerating under their own power.
 					// Also, it's a position that we can stick at the top of a mountain ridge and from there adjust parameters like launcher accelleration, etc.
@@ -616,10 +486,10 @@
 					const launchVehicleRocketExhaustVelocity = dParamWithUnits['launchVehicleRocketExhaustVelocity'].value
 					const m0Overmf = Math.exp(deltaVNeededToCircularizeOrbit / launchVehicleRocketExhaustVelocity)
 					//console.log(coe)
-					console.log('speedAtApogee', speedAtApogee)
-					console.log('apogeeAltitude', apogeeDistance - radiusOfPlanet)
-					console.log('deltaVNeededToCircularizeOrbit', deltaVNeededToCircularizeOrbit)
-					console.log('m0Overmf', m0Overmf)
+					// console.log('speedAtApogee', speedAtApogee)
+					// console.log('apogeeAltitude', apogeeDistance - radiusOfPlanet)
+					// console.log('deltaVNeededToCircularizeOrbit', deltaVNeededToCircularizeOrbit)
+					// console.log('m0Overmf', m0Overmf) // This is the initial mass of the fueled vehicle divided by the mass of the vehicle after it's rocket engine has burned out and it has circularized it's orbit.
 
 					// Better V0 calculation - we need to take into account the rotation of the planet...
 					//const V0 = new THREE.Vector2(launcherMassDriverExitVelocity * Math.sin(upwardAngleAtEndOfRamp), launcherMassDriverExitVelocity * Math.cos(upwardAngleAtEndOfRamp)) // This is the vehicle's velocity vector at the exit of the launcher
@@ -891,7 +761,6 @@
 
 					// Make a curve for the launch trajectory
 					this.launchTrajectoryCurve = new THREE.CatmullRomSuperCurve3(launchTrajectoryCurveControlPoints)
-					this.launchTrajectoryCurveDuration = t
 					this.launchTrajectoryCurve.curveType = 'centripetal'
 					this.launchTrajectoryCurve.closed = false
 					this.launchTrajectoryCurve.tension = 0
@@ -942,21 +811,25 @@
 					let t = 0
 					let prevVehiclePosition, currVehiclePosition
 					
-					prevVehiclePosition = this.launchTrajectoryCurve.getPoint(t / this.launchTrajectoryCurveDuration)
+					prevVehiclePosition = this.launchTrajectoryCurve.getPoint(t / this.durationOfLaunchTrajectory)
 					t += tStep
 
 					const color = new THREE.Color()
 					const launchTrajectoryPoints = []
 					const launchTrajectoryColors = []
-					
 
 					for (; t < this.timeWithinMassDriver + dParamWithUnits['launcherCoastTime'].value; t+=tStep) {
-						currVehiclePosition = this.launchTrajectoryCurve.getPoint(t / this.launchTrajectoryCurveDuration)
+						currVehiclePosition = this.launchTrajectoryCurve.getPoint(t / this.durationOfLaunchTrajectory)
 						launchTrajectoryPoints.push(prevVehiclePosition)
 						launchTrajectoryPoints.push(currVehiclePosition)
 						prevVehiclePosition = currVehiclePosition.clone()
 						// This code adds major thick hash marks to the line every 60 seconds, and thin hash marks every 10 seconds.
-						color.setHSL(0.5 , 0.5, 1.0 * ((t%10==9) || (t%60==58)))
+						if ((t%10==9) || (t%60==58)) {
+							color.setHSL(0.0 , 0.2, 0.4 )
+						}
+						else {
+							color.setHSL(0.35 , 0.2, 0.95 )
+						}
 						launchTrajectoryColors.push(color.r, color.g, color.b)
 						launchTrajectoryColors.push(color.r, color.g, color.b)
 					}
@@ -1611,7 +1484,7 @@
 				container = document.getElementById( 'container' );
 
 				scene = new THREE.Scene();
-				scene.background = new THREE.Color( 0xf0f0f0 );
+				scene.background = new THREE.Color( 0x0f0f0f );
 
 				const fov = 45 // dParamWithUnits['cameraFieldOfView'].value
 				const aspectRatio = window.innerWidth / window.innerHeight
@@ -1649,7 +1522,8 @@
 				let displacementMap
 				const w = 24
 				const h = 12
-				const displacementBias = -1135
+				const displacementScale = 6600
+				const displacementBias = -930.7
 				const earthTextureOpacity = 1
 
 				// Low-res whole planet
@@ -1693,7 +1567,7 @@
 								new THREE.MeshStandardMaterial({
 									map: texture,
 									displacementMap: displacementMap,
-									displacementScale: 8100,
+									displacementScale: displacementScale,
 									displacementBias: displacementBias,
 									transparent: true,
 									opacity: earthTextureOpacity,
@@ -1716,13 +1590,14 @@
 
 				const dParamWithUnits = {
 					launcherMassDriverForwardAcceleration: {value: 50},
-					launcherMassDriverUpwardAcceleration: {value: 50},
-					launcherMassDriverAltitude: {value: 2700},
+					launcherMassDriverUpwardAcceleration: {value: 80},
+					launcherMassDriverAltitude: {value: 0},
 					launcherEvacuatedTubeExitAltitude: {value: 15000},
-					launcherRampExitAltitude: {value: 2700},
+					launcherRampExitAltitude: {value: 4169.4},
+					launcherRampEndLatitudeDegreesN: {value: 19.479488},
+					launcherRampEndLonitudeDegreesE: {value: -155.602829},
 					launcherMassDriverInitialVelocity: {value: 210},
 					launcherMassDriverExitVelocity: {value: 8000},
-					launcherMassDriverScrewModelRoughLength: {value: 2},
 					launchVehicleRocketExhaustVelocity: {value: 4436},
 					launchVehicleEmptyMass: {value: 1000},
 					launchVehiclePayloadMass: {value: 100},
@@ -1743,14 +1618,11 @@
 					perfOptimizedThreeJS: {value: false},
 				};
 
-				const evacuatedTubeEntrancePosition = new THREE.Vector3(-2316265.9940429763, 2220130.3502845275, -5548271.348861104)
-				const evacuatedTubeExitPosition = new THREE.Vector3(-2316265.9940429763, 2220030.3502845275, -5548271.348861104)
-
 				// ToDo: Fully implement sceneOrtho
 				let sceneOrtho = new THREE.Scene()
 				const xyChart = new XYChart(sceneOrtho)
-				const launchSystem = new launcher(dParamWithUnits, planetCoordSys, radiusOfPlanet, evacuatedTubeEntrancePosition, evacuatedTubeExitPosition, xyChart, clock);
-				launchSystem.updateTrajectoryCurves(dParamWithUnits, planetCoordSys, radiusOfPlanet, evacuatedTubeEntrancePosition, evacuatedTubeExitPosition);
+				const launchSystem = new launcher(dParamWithUnits, planetCoordSys, radiusOfPlanet, xyChart, clock);
+				launchSystem.updateTrajectoryCurves(dParamWithUnits, planetCoordSys, radiusOfPlanet);
 				launchSystem.drawLaunchTrajectoryLine(dParamWithUnits, planetCoordSys);
 
 				
@@ -1794,11 +1666,11 @@
 					render();
 				} );
 				gui.add( params, 'logZoomRate', -4, 0).step( 0.01 ).onChange( function ( value ) { logZoomRate = value });
-				gui.add( params, 'elevationFactor', 1, 20).step( 0.01 ).onChange( function ( value ) {
+				gui.add( params, 'elevationFactor', 0, 20).step( 0.01 ).onChange( function ( value ) {
 					planetMeshes.traverse(child => {
 						if (child.name === 'highResPlanet') {
-							child.material.displacementScale = 8100 * value;
-							child.material.displacementBias = -1135 * value;
+							child.material.displacementScale = 6600 * value;
+							child.material.displacementBias = -930.7 * value;
 							child.material.needsUpdate = true;
 							renderer.render(scene, camera, null, true);
 						}
@@ -1807,6 +1679,26 @@
 				gui.add( params, 'logRocketScale', 0, 8).step( 0.01 ).onChange( function ( value ) {
 					const expValue = Math.exp(value)
 					launchVehicleMesh.scale.set(expValue, expValue, expValue);
+				});
+				gui.add( params, 'massDriverAcceleration', 5, 1000).step( 1 ).onChange( function ( value ) {
+					dParamWithUnits['launcherMassDriverForwardAcceleration'].value = value
+					launchSystem.updateTrajectoryCurves(dParamWithUnits, planetCoordSys, radiusOfPlanet);
+					launchSystem.drawLaunchTrajectoryLine(dParamWithUnits, planetCoordSys);
+				});
+				gui.add( params, 'rampUpwardAcceleration', 5, 1000).step( 1 ).onChange( function ( value ) {
+					dParamWithUnits['launcherMassDriverUpwardAcceleration'].value = value
+					launchSystem.updateTrajectoryCurves(dParamWithUnits, planetCoordSys, radiusOfPlanet);
+					launchSystem.drawLaunchTrajectoryLine(dParamWithUnits, planetCoordSys);
+				});
+				gui.add( params, 'massDriverAltitude', 0, 100000).step( 1 ).onChange( function ( value ) {
+					dParamWithUnits['launcherMassDriverAltitude'].value = value
+					launchSystem.updateTrajectoryCurves(dParamWithUnits, planetCoordSys, radiusOfPlanet);
+					launchSystem.drawLaunchTrajectoryLine(dParamWithUnits, planetCoordSys);
+				});
+				gui.add( params, 'launcherRampExitAltitude', 3000, 10000).step( 1 ).onChange( function ( value ) {
+					dParamWithUnits['launcherRampExitAltitude'].value = value
+					launchSystem.updateTrajectoryCurves(dParamWithUnits, planetCoordSys, radiusOfPlanet);
+					launchSystem.drawLaunchTrajectoryLine(dParamWithUnits, planetCoordSys);
 				});
 				gui.add( params, 'sunlightIntensity', 0, 5).onChange( function (value) {sunLight.intensity = value});
 				gui.add( params, 'ambientLightIntensity', 0, 5).onChange( function (value) {ambientLight.intensity = value});
@@ -1870,7 +1762,7 @@
 
 				for ( let i = 0; i < splinePointsLength; i ++ ) {
 
-					positions.push( splineHelperObjects[ i ].position );
+					positions.push( splineHandleObjects[ i ].position );
 
 				}
 
@@ -1912,11 +1804,11 @@
 					scene.add( spline.mesh );
 
 				}
-
-				load( [ new THREE.Vector3( 289.76843686945404, 452.51481137238443, 56.10018915737797 ),
-					new THREE.Vector3( - 53.56300074753207, 171.49711742836848, - 14.495472686253045 ),
-					new THREE.Vector3( - 91.40118730204415, 176.4306956436485, - 6.958271935582161 ),
-					new THREE.Vector3( - 383.785318791128, 491.1365363371675, 47.869296953772746 ) ] );
+				const sceneCenter = new THREE.Vector3(-2316265, 2220030, -5548271)
+				load( [ new THREE.Vector3( 28900, 45200, 5600 ).add(sceneCenter),
+					new THREE.Vector3( - 5300, 17100, -1400 ).add(sceneCenter),
+					new THREE.Vector3( - 9100, 17600, -600 ).add(sceneCenter),
+					new THREE.Vector3( - 38300, 49100, 4700 ).add(sceneCenter) ] );
 
 				render();
 
@@ -1930,10 +1822,6 @@
 			// *****************************************************************
 
 
-			const mouse = {
-				x: undefined,
-				y: undefined
-			}
 			let intersectionPoint = new THREE.Vector3
 			let targetPoint = new THREE.Vector3
 			let orbitControlsTargetPoint = new THREE.Vector3(0, 0, 0)
@@ -1959,7 +1847,7 @@
 				if (orbitControlsEarthRingLerpFactor!=1) {
 					//console.log("Lerping...")
 					orbitControlsEarthRingLerpFactor = tram.clamp(orbitControlsEarthRingLerpFactor + orbitControlsEarthRingLerpSpeed, 0, 1)
-
+					const previousEnabled = orbitControls.enabled
 					orbitControls.enabled = false
 					orbitControls.target.lerpVectors(previousTargetPoint, orbitControlsTargetPoint, orbitControlsEarthRingLerpFactor)
 					const upVector = new THREE.Vector3()
@@ -1970,7 +1858,7 @@
 					camera.up.copy(upVector)
 					orbitControls.upDirection.copy(upVector)
 					orbitControls.screenSpacePanning = false
-					orbitControls.enabled = true
+					orbitControls.enabled = previousEnabled
 					orbitControls.update()
 				}
 				else {
@@ -2012,7 +1900,7 @@
 				const ringCenterLongitude = 186.3
 				const v1 = new THREE.Vector3(0, 1, 0)
 				const v2 = new THREE.Vector3().setFromSphericalCoords(
-					1, 
+					1,
 					Math.PI/2 - ringCenterLatitude,
 					ringCenterLongitude,
 				)
@@ -2182,26 +2070,27 @@
 
 			function addSplineObject( position ) {
 
-				const material = new THREE.MeshLambertMaterial( { color: Math.random() * 0xffffff } );
-				const object = new THREE.Mesh( geometry, material );
+				const splineHandleMaterial = new THREE.MeshLambertMaterial( { color: Math.random() * 0xffffff } );
+				const splineHandleMesh = new THREE.Mesh( splineHandleGeometry, splineHandleMaterial );
 
 				if ( position ) {
 
-					object.position.copy( position );
+					splineHandleMesh.position.copy( position );
 
 				} else {
 
-					object.position.x = Math.random() * 1000 - 500;
-					object.position.y = Math.random() * 600;
-					object.position.z = Math.random() * 800 - 400;
+					splineHandleMesh.position.x = Math.random() * 1000 - 500;
+					splineHandleMesh.position.y = Math.random() * 600;
+					splineHandleMesh.position.z = Math.random() * 800 - 400;
 
 				}
 
-				object.castShadow = true;
-				object.receiveShadow = true;
-				scene.add( object );
-				splineHelperObjects.push( object );
-				return object;
+				splineHandleMesh.castShadow = true;
+				splineHandleMesh.receiveShadow = true;
+				splineHandleMesh.name = 'splineHandle' + splineHandleObjects.length
+				scene.add( splineHandleMesh );
+				splineHandleObjects.push( splineHandleMesh );
+				return splineHandleMesh;
 
 			}
 
@@ -2225,7 +2114,7 @@
 
 				}
 
-				const point = splineHelperObjects.pop();
+				const point = splineHandleObjects.pop();
 				splinePointsLength --;
 				positions.pop();
 
@@ -2267,7 +2156,7 @@
 
 				for ( let i = 0; i < splinePointsLength; i ++ ) {
 
-					const p = splineHelperObjects[ i ].position;
+					const p = splineHandleObjects[ i ].position;
 					strplace.push( `new THREE.Vector3(${p.x}, ${p.y}, ${p.z})` );
 
 				}
@@ -2323,8 +2212,14 @@
 				onUpPosition.x = event.clientX;
 				onUpPosition.y = event.clientY;
 
+				if (transformControl.object) {
+					transformControl.object.rotation.set(.5, .5, .5)
+				}
+
 				if ( onDownPosition.distanceTo( onUpPosition ) === 0 ) {
 					
+					// Set the orientation of the handleCube to align it with the surface of the planet
+					// console.log(transformControl.object.position)
 					transformControl.detach();
 					render();
 
@@ -2339,17 +2234,20 @@
 
 				raycaster.setFromCamera( pointer, camera );
 
-				const intersects = raycaster.intersectObjects( splineHelperObjects, false );
+				const intersects = raycaster.intersectObjects( splineHandleObjects, false );
 
 				if ( intersects.length > 0 ) {
 
 					const object = intersects[ 0 ].object;
+					console.log('intersected')
 
-					if ( object !== transformControl.object ) {
+					if ( (transformControl.object === undefined) || (object.name !== transformControl.object.name) ) {
 
 						transformControl.attach( object );
 
 					}
+					transformControl.visible = true
+					//transformControl.rotateX(0.1)
 
 				}
 

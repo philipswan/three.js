@@ -38,14 +38,16 @@
 		<script type="module">
 
 			import * as THREE from 'three';
-
 			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
-
 			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 			import { TransformControls } from 'three/addons/controls/TransformControls.js';
+			import { launchVehicleModel } from './jsm/objects/rocket.js'
 
 			let container;
 			let camera, scene, renderer;
+			let dot;
+			let tangentLines, tangentGeometry, normalGeometry, binormalGeometry;
+			let launchVehicleMesh;
 			const splineHelperObjects = [];
 			let splinePointsLength = 4;
 			const positions = [];
@@ -68,6 +70,9 @@
 				tension: 0.5,
 				centripetal: true,
 				chordal: true,
+				distanceInterpolation: false,
+				normalizedNormals: false,
+				alpha: 0.5,
 				addPoint: addPoint,
 				removePoint: removePoint,
 				exportSpline: exportSpline
@@ -103,12 +108,12 @@
 				const planeMaterial = new THREE.ShadowMaterial( { color: 0x000000, opacity: 0.2 } );
 
 				const plane = new THREE.Mesh( planeGeometry, planeMaterial );
-				plane.position.y = - 200;
+				plane.position.y = -200;
 				plane.receiveShadow = true;
 				scene.add( plane );
 
 				const helper = new THREE.GridHelper( 2000, 100 );
-				helper.position.y = - 199;
+				helper.position.y = -199;
 				helper.material.opacity = 0.25;
 				helper.material.transparent = true;
 				scene.add( helper );
@@ -131,6 +136,9 @@
 				} );
 				gui.add( params, 'centripetal' ).onChange( render );
 				gui.add( params, 'chordal' ).onChange( render );
+				gui.add( params, 'distanceInterpolation' ).onChange( render );
+				gui.add( params, 'normalizedNormals' ).onChange( render );
+				gui.add( params, 'alpha', 0, 1 ).onChange( render );
 				gui.add( params, 'addPoint' );
 				gui.add( params, 'removePoint' );
 				gui.add( params, 'exportSpline' );
@@ -182,7 +190,7 @@
 				const geometry = new THREE.BufferGeometry();
 				geometry.setAttribute( 'position', new THREE.BufferAttribute( new Float32Array( ARC_SEGMENTS * 3 ), 3 ) );
 
-				let curve = new THREE.CatmullRomCurve3( positions );
+				let curve = new THREE.CatmullRomSuperCurve3( positions );
 				curve.curveType = 'catmullrom';
 				curve.mesh = new THREE.Line( geometry.clone(), new THREE.LineBasicMaterial( {
 					color: 0xff0000,
@@ -191,7 +199,7 @@
 				curve.mesh.castShadow = true;
 				splines.uniform = curve;
 
-				curve = new THREE.CatmullRomCurve3( positions );
+				curve = new THREE.CatmullRomSuperCurve3( positions );
 				curve.curveType = 'centripetal';
 				curve.mesh = new THREE.Line( geometry.clone(), new THREE.LineBasicMaterial( {
 					color: 0x00ff00,
@@ -200,7 +208,7 @@
 				curve.mesh.castShadow = true;
 				splines.centripetal = curve;
 
-				curve = new THREE.CatmullRomCurve3( positions );
+				curve = new THREE.CatmullRomSuperCurve3( positions );
 				curve.curveType = 'chordal';
 				curve.mesh = new THREE.Line( geometry.clone(), new THREE.LineBasicMaterial( {
 					color: 0x0000ff,
@@ -221,6 +229,34 @@
 					new THREE.Vector3( - 91.40118730204415, 176.4306956436485, - 6.958271935582161 ),
 					new THREE.Vector3( - 383.785318791128, 491.1365363371675, 47.869296953772746 ) ] );
 
+				dot = new THREE.Mesh( new THREE.SphereGeometry( 10 ), new THREE.MeshBasicMaterial({color: 0xff00ff}) );
+				dot.castShadow = true;
+				scene.add( dot );
+
+				const tmpPoints = [new THREE.Vector3, new THREE.Vector3];
+
+				const tangentMaterial = new THREE.LineBasicMaterial({color: 0x303030})
+				tangentGeometry = new THREE.BufferGeometry().setFromPoints(tmpPoints);
+				const tangentMesh = new THREE.LineSegments(tangentGeometry, tangentMaterial)
+				tangentMesh.castShadow = true;
+				scene.add( tangentMesh );
+				
+				const normalMaterial = new THREE.LineBasicMaterial({color: 0x30ffff})
+				normalGeometry = new THREE.BufferGeometry().setFromPoints(tmpPoints);
+				const normalMesh = new THREE.LineSegments(normalGeometry, normalMaterial);
+				normalMesh.castShadow = true;
+				scene.add( normalMesh );
+				
+				const binormalMaterial = new THREE.LineBasicMaterial({color: 0xff30ff})
+				binormalGeometry = new THREE.BufferGeometry().setFromPoints(tmpPoints);
+				const binormalMesh = new THREE.LineSegments(binormalGeometry, binormalMaterial);
+				binormalMesh.castShadow = true;
+				scene.add( binormalMesh );
+
+				launchVehicleMesh = new launchVehicleModel(12, 100, 100, 150, 50, 2, 12)
+				launchVehicleMesh.children.forEach(subMesh => { subMesh.castShadow = true });
+				scene.add( launchVehicleMesh );
+								
 				render();
 
 			}
@@ -352,6 +388,41 @@
 				splines.uniform.mesh.visible = params.uniform;
 				splines.centripetal.mesh.visible = params.centripetal;
 				splines.chordal.mesh.visible = params.chordal;
+				let orientation;
+
+				const selectedSpline = splines[ params.uniform ? 'uniform' : params.centripetal ? 'centripetal' : 'chordal' ];
+				if (params.distanceInterpolation) {
+					dot.position.copy(selectedSpline.getPointAt( params.alpha ))
+					tangentGeometry.setFromPoints([dot.position, dot.position.clone().add(selectedSpline.getTangentAt( params.alpha ).multiplyScalar(100))])
+					if (params.normalizedNormals) {
+						normalGeometry.setFromPoints([dot.position, dot.position.clone().add(selectedSpline.getNormalAt( params.alpha ).multiplyScalar(100))])
+						binormalGeometry.setFromPoints([dot.position, dot.position.clone().add(selectedSpline.getBinormalAt( params.alpha ).multiplyScalar(100))])
+					}
+					else {
+						normalGeometry.setFromPoints([dot.position, dot.position.clone().add(selectedSpline.getRawNormalAt( params.alpha ).multiplyScalar(0.0000025))])
+						binormalGeometry.setFromPoints([dot.position, dot.position.clone().add(selectedSpline.getRawBinormalAt( params.alpha ).multiplyScalar(0.0000025))])
+					}
+					orientation = selectedSpline.getQuaternionAt( params.alpha );
+				}
+				else {
+					dot.position.copy(selectedSpline.getPoint( params.alpha ))
+					tangentGeometry.setFromPoints([dot.position, dot.position.clone().add(selectedSpline.getTangent( params.alpha ).multiplyScalar(100))])
+					if (params.normalizedNormals) {
+						normalGeometry.setFromPoints([dot.position, dot.position.clone().add(selectedSpline.getNormal( params.alpha ).multiplyScalar(100))])
+						binormalGeometry.setFromPoints([dot.position, dot.position.clone().add(selectedSpline.getBinormal( params.alpha ).multiplyScalar(100))])
+					}
+					else {
+						normalGeometry.setFromPoints([dot.position, dot.position.clone().add(selectedSpline.getRawNormal( params.alpha ).multiplyScalar(0.0000025))])
+						binormalGeometry.setFromPoints([dot.position, dot.position.clone().add(selectedSpline.getRawBinormal( params.alpha ).multiplyScalar(0.0000025))])
+					}
+					orientation = selectedSpline.getQuaternion( params.alpha );
+				}
+
+				const modelForward = new THREE.Vector3( 0, 1, 0 ) // The direction that the model considers is "forward"
+		        const modelUpward = new THREE.Vector3( 0, 0, 1 )  // The direction that the model considers is "upward"
+				launchVehicleMesh.position.copy( dot.position )
+				launchVehicleMesh.setRotationFromQuaternion( orientation, modelForward, modelUpward );
+
 				renderer.render( scene, camera );
 
 			}
